@@ -204,13 +204,22 @@ open class KafkaAutoCommitEventConsumer(private val config: KafkaSinkConfigurati
 
     fun executeAction(action: (String, List<StreamsSinkEntity>) -> Unit, topic: String,
                       topicRecords: MutableIterable<ConsumerRecord<ByteArray, ByteArray>>) {
-        try {
-            action(topic, convert(topicRecords))
-        } catch (e: Exception) {
-            topicRecords
-                    .map { DLQData.from(it, e, this::class.java) }
-                    .forEach{ sentToDLQ(it) }
-        }
+        var failedCount = 0
+        do {
+            try {
+                action(topic, convert(topicRecords))
+                failedCount = 0
+            } catch (e: Exception) {
+                topicRecords
+                        .map { DLQData.from(it, e, this::class.java) }
+                        .forEach { sentToDLQ(it) }
+                // 无限重试，记录log
+                if (++failedCount % 5 == 0) {
+                    log.warn("Write to db failed, try $failedCount times. $e")
+                    Thread.sleep(1000)
+                }
+            }
+        } while (failedCount > 0)
     }
 
     private fun convert(topicRecords: MutableIterable<ConsumerRecord<ByteArray, ByteArray>>): List<StreamsSinkEntity> = topicRecords
