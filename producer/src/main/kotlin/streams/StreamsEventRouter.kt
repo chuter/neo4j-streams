@@ -18,8 +18,8 @@ abstract class StreamsEventRouter(val logService: LogService?, val config: Confi
 
 object StreamsEventRouterFactory {
     fun getStreamsEventRouter(logService: LogService, config: Config): StreamsEventRouter {
-        return Class.forName(config.raw.getOrDefault("streams.router", "streams.kafka.KafkaEventRouter"))
-                .getConstructor(LogService::class.java, Config::class.java)
+        return Class.forName(config.raw.getOrDefault("streams.router", "streams.wal.WalEventRouter"))
+        .getConstructor(LogService::class.java, Config::class.java)
                 .newInstance(logService, config) as StreamsEventRouter
     }
 }

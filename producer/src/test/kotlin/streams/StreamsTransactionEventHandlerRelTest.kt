@@ -16,6 +16,8 @@ import org.neo4j.graphdb.schema.ConstraintDefinition
 import org.neo4j.graphdb.schema.ConstraintType
 import org.neo4j.graphdb.schema.Schema
 import org.neo4j.kernel.internal.GraphDatabaseAPI
+import org.neo4j.logging.internal.LogService
+import org.neo4j.logging.internal.NullLogService
 import streams.events.*
 import streams.events.StreamsConstraintType
 import streams.mocks.MockStreamsEventRouter
@@ -42,7 +44,7 @@ class StreamsTransactionEventHandlerRelTest {
         streamsConstraintsService = StreamsConstraintsService(dbMock, 0)
         streamsConstraintsService.start()
         handler = StreamsTransactionEventHandler(MockStreamsEventRouter(),
-                streamsConstraintsService, StreamsEventRouterConfiguration())
+                streamsConstraintsService, StreamsEventRouterConfiguration(), NullLogService.getInstance().nullLog)
         MockStreamsEventRouter.reset()
     }
 

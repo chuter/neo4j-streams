@@ -55,7 +55,7 @@ class StreamsEventRouterLifecycle(val db: GraphDatabaseAPI, val streamHandler: S
     private fun registerTransactionEventHandler() {
         if (streamsEventRouterConfiguration.enabled) {
             streamsConstraintsService = StreamsConstraintsService(db, streamsEventRouterConfiguration.schemaPollingInterval)
-            txHandler = StreamsTransactionEventHandler(streamHandler, streamsConstraintsService, streamsEventRouterConfiguration)
+            txHandler = StreamsTransactionEventHandler(streamHandler, streamsConstraintsService, streamsEventRouterConfiguration, streamsLog)
             db.registerTransactionEventHandler(txHandler)
             availabilityGuard.addListener(object: AvailabilityListener {
                 override fun unavailable() {}

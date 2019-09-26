@@ -2,6 +2,7 @@ package streams
 
 import org.neo4j.graphdb.event.TransactionData
 import org.neo4j.graphdb.event.TransactionEventHandler
+import org.neo4j.logging.Log
 import streams.events.*
 import streams.extensions.labelNames
 import streams.utils.SchemaUtils.getNodeKeys
@@ -11,7 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class StreamsTransactionEventHandler(private val router: StreamsEventRouter,
                                      private val streamsConstraintsService: StreamsConstraintsService,
-                                     private val configuration: StreamsEventRouterConfiguration)
+                                     private val configuration: StreamsEventRouterConfiguration,
+                                     private val log: Log)
     : TransactionEventHandler<PreviousTransactionData> {
 
     /**
