@@ -123,7 +123,7 @@ class KafkaEventSink(private val config: Config,
                             }
                             queryExecution.writeForTopic(topic, data)
                         }
-                        TimeUnit.SECONDS.toMillis(1)
+                        0
                     } else {
                         val timeMillis = TimeUnit.MINUTES.toMillis(5)
                         if (log.isDebugEnabled) {
