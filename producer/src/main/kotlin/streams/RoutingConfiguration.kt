@@ -7,31 +7,38 @@ import org.neo4j.graphdb.Relationship
 import streams.events.*
 
 
-private val PATTERN_REG: Regex = "^(\\w+\\s*(?::\\s*(?:[\\w|\\*]+)\\s*)*)\\s*(?:\\{\\s*(-?[\\w|\\*]+\\s*(?:,\\s*-?[\\w|\\*]+\\s*)*)\\})?\$".toRegex()
+private val PATTERN_REG: Regex = "^(\\w+\\s*(?::\\s*(?:[\\w|\\*]+)\\s*)*)\\s*(?:\\{\\s*([-@]?[\\w|\\*]+\\s*(?:,\\s*[-@]?[\\w|\\*]+\\s*)*)\\})?\$".toRegex()
 private val PATTERN_COLON_REG = "\\s*:\\s*".toRegex()
 private val PATTERN_COMMA = "\\s*,\\s*".toRegex()
 private const val PATTERN_WILDCARD = "*"
 private const val PATTERN_PROP_MINUS = '-'
+private const val PATTERN_PROP_AT = "@"
 private const val PATTERN_SPLIT = ";"
 
 data class RoutingProperties(val all: Boolean,
                              val include: List<String>,
-                             val exclude: List<String>) {
+                             val exclude: List<String>,
+                             val filter: List<String>) {
     companion object {
         fun from(matcher: MatchResult): RoutingProperties {
             val props = matcher.groupValues[2].trim().let { if (it.isEmpty()) emptyList() else it.trim().split(PATTERN_COMMA) }
             val include = if (props.isEmpty()) {
                 emptyList()
             } else {
-                props.filter { it != PATTERN_WILDCARD && !it.startsWith(PATTERN_PROP_MINUS) }
+                props.filter { it != PATTERN_WILDCARD && !it.startsWith(PATTERN_PROP_MINUS) && !it.startsWith(PATTERN_PROP_AT) }
             }
             val exclude = if (props.isEmpty()) {
                 emptyList()
             } else {
                 props.filter { it != PATTERN_WILDCARD && it.startsWith(PATTERN_PROP_MINUS) }.map { it.substring(1) }
             }
+            val filter = if (props.isEmpty()) {
+                emptyList()
+            } else {
+                props.filter { it != PATTERN_WILDCARD && it.startsWith(PATTERN_PROP_AT) }.map { it.substring(1) }
+            }
             val all = props.isEmpty() || props.contains(PATTERN_WILDCARD)
-            return RoutingProperties(all = all, include = include, exclude = exclude)
+            return RoutingProperties(all = all, include = include, exclude = exclude, filter = filter)
         }
     }
 }
@@ -41,7 +48,28 @@ abstract class RoutingConfiguration {
     abstract val all: Boolean
     abstract val include: List<String>
     abstract val exclude: List<String>
+    abstract val filter: List<String>
     abstract fun filter(entity: Entity): Map<String, Any?>
+}
+
+private fun hasLabelWithFilter(label: String, filter: List<String>, streamsTransactionEvent: StreamsTransactionEvent): Boolean {
+    if (!hasLabel(label, streamsTransactionEvent)) {
+        return false
+    } else if (filter.isEmpty()) {
+        return true
+    } else if (streamsTransactionEvent.payload.before != null && streamsTransactionEvent.payload.after == null) {
+        if (streamsTransactionEvent.payload.before!!.properties == null) {
+            return false
+        }
+        return filter.all { streamsTransactionEvent.payload.before!!.properties!!.containsKey(it) }
+    } else if (streamsTransactionEvent.payload.after != null) {
+        if (streamsTransactionEvent.payload.after!!.properties == null) {
+            return false
+        }
+        return filter.all { streamsTransactionEvent.payload.after!!.properties!!.containsKey(it) }
+    } else {
+        return false
+    }
 }
 
 private fun hasLabel(label: String, streamsTransactionEvent: StreamsTransactionEvent): Boolean {
@@ -83,7 +111,8 @@ data class NodeRoutingConfiguration(val labels: List<String> = emptyList(),
                                     override val topic: String = "neo4j",
                                     override val all: Boolean = true,
                                     override val include: List<String> = emptyList(),
-                                    override val exclude: List<String> = emptyList()): RoutingConfiguration() {
+                                    override val exclude: List<String> = emptyList(),
+                                    override val filter: List<String> = emptyList()): RoutingConfiguration() {
 
     override fun filter(node: Entity): Map<String, Any?> {
         if (node !is Node) {
@@ -109,7 +138,7 @@ data class NodeRoutingConfiguration(val labels: List<String> = emptyList(),
                     val labels = matcher.groupValues[1].split(PATTERN_COLON_REG)
                     val properties = RoutingProperties.from(matcher)
                     NodeRoutingConfiguration(labels = labels, topic = topic, all = properties.all,
-                            include = properties.include, exclude = properties.exclude)
+                            include = properties.include, exclude = properties.exclude, filter = properties.filter)
                 }
             }
         }
@@ -117,14 +146,15 @@ data class NodeRoutingConfiguration(val labels: List<String> = emptyList(),
         fun prepareEvent(streamsTransactionEvent: StreamsTransactionEvent, routingConf: List<NodeRoutingConfiguration>): Map<String, StreamsTransactionEvent> {
             return routingConf
                     .filter {
-                        it.labels.isEmpty() || it.labels.any { hasLabel(it, streamsTransactionEvent) }
+                        val labelFilter = it.filter
+                        it.labels.isEmpty() || it.labels.any { hasLabelWithFilter(it, labelFilter, streamsTransactionEvent) }
                     }
                     .map {
                         val nodePayload = streamsTransactionEvent.payload as NodePayload
                         val newRecordBefore = if (nodePayload.before != null) {
                             val recordBefore = nodePayload.before as NodeChange
                             recordBefore.copy(properties = filterProperties(streamsTransactionEvent.payload.before?.properties, it),
-                                    labels = recordBefore.labels)
+                                    labels =  recordBefore.labels)
                         } else {
                             null
                         }
@@ -155,7 +185,8 @@ data class RelationshipRoutingConfiguration(val name: String = "",
                                             override val topic: String = "neo4j",
                                             override val all: Boolean = true,
                                             override val include: List<String> = emptyList(),
-                                            override val exclude: List<String> = emptyList()): RoutingConfiguration() {
+                                            override val exclude: List<String> = emptyList(),
+                                            override val filter: List<String> = emptyList()): RoutingConfiguration() {
 
     override fun filter(relationship: Entity): Map<String, Any?> {
         if (relationship !is Relationship) {
@@ -184,7 +215,7 @@ data class RelationshipRoutingConfiguration(val name: String = "",
                     }
                     val properties = RoutingProperties.from(matcher)
                     RelationshipRoutingConfiguration(name = labels.first(), topic = topic, all = properties.all,
-                            include = properties.include, exclude = properties.exclude)
+                            include = properties.include, exclude = properties.exclude, filter = properties.filter)
                 }
             }
         }
